@@ -1,0 +1,15 @@
+{
+  "name": "lucaf/woocommerce-image-import",
+  "version": "1.0.0",
+  "type": "wordpress-plugin",
+  "require": {
+    "ext-gd": "*"
+  },
+  "require-dev": {
+    "php-stubs/wordpress-stubs": "v6.8.2",
+    "php-stubs/woocommerce-stubs": "v9.9.5"
+  },
+  "autoload": {
+    "psr-4": { "WGM\\": "includes/" }
+  }
+}

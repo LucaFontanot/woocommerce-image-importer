@@ -9,7 +9,7 @@ class Uploader
         add_action('wp_ajax_wii_upload_image', [__CLASS__, 'ajaxRequest']);
     }
 
-    protected static function handleUpload($file, $watermark, $category, $tags, $quality, $price)
+    protected static function handleUpload($file, $watermark, $category, $tags, $quality, $price, $label): bool
     {
         $valid_mimes = ['image/jpeg', 'image/png', 'image/gif', 'image/webp'];
         if (!in_array($file['type'], $valid_mimes)) {
@@ -128,7 +128,7 @@ class Uploader
             return false;
         }
         $product = new \WC_Product_Simple();
-        $product->set_name($file_name);
+        $product->set_name($label);
         $product->set_status('publish');
         $product->set_catalog_visibility('visible');
         $product->set_virtual(true);
@@ -156,14 +156,25 @@ class Uploader
     {
         if (!current_user_can(Settings::PERMISSION)) {
             wp_send_json_error(['message' => 'Not enough permissions.']);
+            return;
         }
-        if (empty($_FILES['image']) || $_FILES['image']['error'] !== UPLOAD_ERR_OK) {
-            wp_send_json_error(['message' => 'File not uploaded.']);
+        if (empty($_FILES['image'])) {
+            wp_send_json_error(['message' => 'File is empty uploaded.']);
+            return;
+        }
+        if ($_FILES['image']['error'] != UPLOAD_ERR_OK) {
+            if ($_FILES['image']['error'] == UPLOAD_ERR_INI_SIZE || $_FILES['image']['error'] == UPLOAD_ERR_FORM_SIZE) {
+                wp_send_json_error(['message' => 'File size exceeds the allowed limit. Edit your php.ini or .htaccess file.']);
+            } else {
+                wp_send_json_error(['message' => 'Error during file upload.']);
+            }
+            return;
         }
         $file = $_FILES['image'];
         $watermark = intval($_POST["watermark"] ?? 0) == 1;
         $category = intval($_POST["category"] ?? 0);
         $price = floatval($_POST["price"] ?? 0);
+        $label = trim(sanitize_text_field($_POST["label"] ?? ""));
         $quality = max(10, min(100, intval($_POST["quality"] ?? 90)));
         $tags = explode(",", $_POST["tags"] ?? "");
         for ($i = 0; $i < count($tags); $i++) {
@@ -173,7 +184,7 @@ class Uploader
             }
         }
 
-        $result = self::handleUpload($file, $watermark, $category, $tags, $quality, $price);
+        $result = self::handleUpload($file, $watermark, $category, $tags, $quality, $price, $label);
         if ($result) {
             wp_send_json_success(['message' => 'File uploaded successfully.']);
         } else {

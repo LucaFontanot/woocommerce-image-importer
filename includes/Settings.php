@@ -35,6 +35,9 @@ class Settings {
         if (!current_user_can(self::PERMISSION)) {
             wp_die(__('You do not have sufficient permissions to access this page.'));
         }
+        wp_enqueue_style('wii-admin-select2', WII_URL . 'assets/css/select2.css', [], '4.0.13');
+        wp_enqueue_style('wii-admin', WII_URL . 'assets/css/style.css', [], '1.0.1');
+        wp_enqueue_script('wii-admin-select2', WII_URL . 'assets/js/select2.js', ['jquery'], '4.0.13', true);
         include WII_PATH . 'views/dashboard.php';
     }
 

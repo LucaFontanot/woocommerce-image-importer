@@ -37,6 +37,10 @@ foreach ($product_tags as $tag) {
         Drop the images here or <input type="file" id="wii-file-input" accept="image/*" multiple
                                        style="display:inline;">
     </div>
+    <div style="text-align: center">
+        <input type="checkbox" id="wii-autofind-checkbox" checked>
+        <label for="wii-autofind-checkbox">Auto select tags and category based on name file</label>
+    </div>
     <div id="wii-queue" class="wii-queue-grid"></div>
     <button id="wii-clear" class="wii-queue-button-remove wii-clear">
         Clear Queue
@@ -57,6 +61,9 @@ foreach ($product_tags as $tag) {
             <div id="wii-current-image" style="margin-top:10px;">
                 <em>No image selected</em>
             </div>
+            <br>
+            <label for="wii-current-filename">Product name:</label>
+            <input type="text" id="wii-current-filename" class="wii-current-filename" placeholder="Product name">
         </div>
         <div class="wii-current-options-container">
             <h4>Upload options</h4>
@@ -91,16 +98,24 @@ foreach ($product_tags as $tag) {
             <br><br>
             <div id="wii-tags-select" class="wii-category-select">
                 <strong>Tags:</strong><br>
-                <?php foreach ($tags as $tag): ?>
-                    <label style="display:inline-block; margin-right:10px;">
-                        <input type="checkbox" value="<?php echo esc_attr($tag['id']); ?>"> <?php echo esc_html($tag['label']); ?>
-                    </label>
-                <?php endforeach; ?>
+                <select id="wii-tags-autocomplete" multiple style="width: 100%;">
+                    <?php foreach ($tags as $tag): ?>
+                        <option value="<?php echo esc_attr($tag['id']); ?>"><?php echo esc_html($tag['label']); ?></option>
+                    <?php endforeach; ?>
+                </select>
             </div>
             <br>
             <button id="wii-upload-button" class="wii-queue-button-select wii-upload-button" disabled>
                 Upload and create
             </button>
+            <div style="display: grid; grid-template-columns: 2fr 1fr; gap: 10px; align-items: center;">
+                <button id="wii-all-button" class="wii-queue-button-select wii-all-button" disabled>
+                    Upload all
+                </button>
+                <button id="wii-cancel-button" class="wii-queue-button-select wii-cancel-button" disabled>
+                    Cancel
+                </button>
+            </div>
         </div>
     </div>
 </div>
@@ -111,10 +126,41 @@ foreach ($product_tags as $tag) {
         const queueDiv = document.getElementById('wii-queue');
         const clearBtn = document.getElementById('wii-clear');
         const uploadBtn = document.getElementById('wii-upload-button');
+        const uploadAllBtn = document.getElementById('wii-all-button');
+        const autoFindCheckbox = document.getElementById('wii-autofind-checkbox');
+        const cancelBtn = document.getElementById('wii-cancel-button');
+        const labelInput = document.getElementById('wii-current-filename');
         const successDiv = document.getElementById('wii-upload-success');
         const errorDiv = document.getElementById('wii-upload-error');
+        const categorySelect = document.getElementById('wii-category-select');
+        let tagsSelect = null;
         let queue = [];
         let selectedImage = null;
+        let isBulkUploading = false; // Stato per upload multiplo
+        let bulkUploadIndex = 0; // Indice per l'upload multiplo
+
+        function findTagsInName(filename) {
+            const tags = <?php echo json_encode($tags); ?>;
+            const foundTags = [];
+            const lowerFilename = filename.toLowerCase();
+            tags.forEach(tag => {
+                if (lowerFilename.includes(tag.label.toLowerCase())) {
+                    foundTags.push(tag.id);
+                }
+            });
+            return foundTags;
+        }
+
+        function findCategoryInName(filename) {
+            const categories = <?php echo json_encode($categories); ?>;
+            const lowerFilename = filename.toLowerCase();
+            for (let i = 0; i < categories.length; i++) {
+                if (lowerFilename.includes(categories[i].label.toLowerCase())) {
+                    return categories[i].id;
+                }
+            }
+            return 0;
+        }
 
         function renderQueue() {
             queueDiv.innerHTML = '';
@@ -156,10 +202,10 @@ foreach ($product_tags as $tag) {
 
         function renderSelection() {
             const currentDiv = document.getElementById('wii-current-image');
-            const uploadBtn = document.getElementById('wii-upload-button');
             if (!selectedImage) {
                 currentDiv.innerHTML = '<em>No image selected</em>';
                 uploadBtn.disabled = true;
+                uploadAllBtn.disabled = true;
                 return;
             }
             currentDiv.innerHTML = '';
@@ -167,7 +213,15 @@ foreach ($product_tags as $tag) {
             img.src = selectedImage.url;
             img.classList.add('wii-current-image');
             currentDiv.appendChild(img);
+            if (autoFindCheckbox.checked) {
+                const tags = findTagsInName(selectedImage.file.name);
+                const category = findCategoryInName(selectedImage.file.name);
+                tagsSelect.val(tags).trigger('change');
+                categorySelect.value = category;
+            }
+            labelInput.value = selectedImage.file.name.replace(/\.[^/.]+$/, "");
             uploadBtn.disabled = false;
+            uploadAllBtn.disabled = false;
         }
 
         function nextInQueue(){
@@ -211,30 +265,34 @@ foreach ($product_tags as $tag) {
             renderQueue();
             nextInQueue();
         });
-        uploadBtn.addEventListener('click', () => {
-            if (!selectedImage) return;
+        // Inizializza Select2 per i tag
+        jQuery(document).ready(function($) {
+            $('#wii-tags-autocomplete').select2({
+                placeholder: 'Seleziona i tag',
+                allowClear: true,
+                width: 'resolve'
+            });
+            tagsSelect = $('#wii-tags-autocomplete');
+        });
+
+        // Funzione per upload di una singola immagine (riutilizzabile)
+        function uploadSingleImage(item, onSuccess, onError, onFinally) {
             const price = parseFloat(document.getElementById('wii-price-input').value) || 0.00;
             const watermark = document.getElementById('wii-watermark-option').checked;
             const quality = document.getElementById('wii-quality-select').value;
-            const category = document.getElementById('wii-category-select').value;
-            const tagsDiv = document.getElementById('wii-tags-select');
-            const tagCheckboxes = tagsDiv.querySelectorAll('input[type="checkbox"]:checked');
-            const tags = Array.from(tagCheckboxes).map(cb => cb.value);
+            const label = labelInput.value.trim();
+            const category = categorySelect.value;
+            const tags = tagsSelect.val() || [];
 
             const formData = new FormData();
             formData.append('action', 'wii_upload_image');
-            formData.append('image', selectedImage.file);
             formData.append('watermark', watermark ? '1' : '0');
             formData.append('quality', quality);
             formData.append('category', category);
             formData.append('price', price.toFixed(2));
             formData.append('tags', tags.join(","));
-            formData.append('_wpnonce', '<?php echo wp_create_nonce('wii_upload_image_nonce'); ?>');
-
-            uploadBtn.disabled = true;
-            uploadBtn.textContent = 'Uploading...';
-            successDiv.style.display = 'none';
-            errorDiv.style.display = 'none';
+            formData.append('label', label);
+            formData.append('image', item.file);
 
             fetch('<?php echo admin_url('admin-ajax.php'); ?>', {
                 method: 'POST',
@@ -242,141 +300,113 @@ foreach ($product_tags as $tag) {
             }).then(response => response.json())
                 .then(data => {
                     if (data.success) {
-                        successDiv.style.display = 'block';
-                        // Remove from queue
-                        queue = queue.filter(item => item !== selectedImage);
-                        nextInQueue();
-                        renderQueue();
+                        if (onSuccess) onSuccess();
                     } else {
-                        console.error('Upload failed:', data);
-                        errorDiv.style.display = 'block';
+                        let errorMessage = 'Error uploading image!';
+                        if (data && data.data && data.data.message){
+                            errorMessage = data.data.message;
+                        }
+                        if (onError) onError(errorMessage);
                     }
                 })
                 .catch(err => {
-                    console.error('Upload error:', err);
-                    errorDiv.style.display = 'block';
+                    let errorMessage = 'Error uploading image!';
+                    if (err && err.response && err.response.data && err.response.data.message){
+                        errorMessage = err.response.data.message;
+                    }
+                    if (onError) onError(errorMessage);
                 })
                 .finally(() => {
-                    uploadBtn.disabled = false;
-                    uploadBtn.textContent = 'Upload and create';
+                    if (onFinally) onFinally();
                 });
+        }
+
+        // Logica per Upload All
+        function uploadAllImages() {
+            if (queue.length === 0) return;
+            isBulkUploading = true;
+            bulkUploadIndex = 0;
+            uploadAllBtn.disabled = true;
+            uploadBtn.disabled = true;
+            cancelBtn.disabled = false;
+            successDiv.style.display = 'none';
+            errorDiv.style.display = 'none';
+            processNextBulkUpload();
+        }
+
+        function processNextBulkUpload() {
+            if (!isBulkUploading) return;
+            if (bulkUploadIndex >= queue.length) {
+                isBulkUploading = false;
+                uploadAllBtn.disabled = false;
+                uploadBtn.disabled = false;
+                cancelBtn.disabled = true;
+                nextInQueue();
+                renderQueue();
+                successDiv.style.display = 'block';
+                errorDiv.style.display = 'none';
+                return;
+            }
+            // Seleziona l'immagine corrente
+            selectedImage = queue[bulkUploadIndex];
+            renderSelection();
+            uploadSingleImage(selectedImage, function() {
+                // Successo: rimuovi dalla coda
+                queue.splice(bulkUploadIndex, 1);
+                // Non incrementare bulkUploadIndex perché la coda si accorcia
+                processNextBulkUpload();
+            }, function(errorMessage) {
+                // Errore: mostra errore e interrompi
+                isBulkUploading = false;
+                uploadAllBtn.disabled = false;
+                uploadBtn.disabled = false;
+                cancelBtn.disabled = true;
+                errorDiv.style.display = 'block';
+                errorDiv.querySelector('p').textContent = errorMessage;
+            }, function() {
+                // Niente da fare qui, gestito sopra
+            });
+        }
+
+        // Logica per Cancel
+        cancelBtn.addEventListener('click', function() {
+            isBulkUploading = false;
+            uploadAllBtn.disabled = false;
+            uploadBtn.disabled = false;
+            cancelBtn.disabled = true;
+        });
+
+        // Bottone Upload All
+        uploadAllBtn.addEventListener('click', function() {
+            if (isBulkUploading) return;
+            uploadAllImages();
+        });
+
+        uploadBtn.addEventListener('click', () => {
+            if (!selectedImage) return;
+            uploadBtn.disabled = true;
+            uploadAllBtn.disabled = true;
+            uploadBtn.textContent = 'Uploading...';
+            successDiv.style.display = 'none';
+            errorDiv.style.display = 'none';
+            uploadSingleImage(selectedImage, function() {
+                successDiv.style.display = 'block';
+                queue = queue.filter(item => item !== selectedImage);
+                nextInQueue();
+                renderQueue();
+            }, function(errorMessage) {
+                errorDiv.style.display = 'block';
+                errorDiv.querySelector('p').textContent = errorMessage;
+            }, function() {
+                uploadBtn.disabled = false;
+                uploadAllBtn.disabled = false;
+                uploadBtn.textContent = 'Upload and create';
+            });
         })
 
         renderQueue();
     })();
 </script>
 <style>
-    .wii-queue-grid {
-        margin-top: 20px;
-        display: grid;
-        grid-template-columns: repeat(4, 1fr);
-        gap: 15px;
-        max-height: 200px;
-        overflow-y: auto;
-        background-color: #fff;
-        border: 1px solid #ccc;
-        padding: 10px;
-    }
 
-    .wii-dropzone {
-        border: 2px dashed #aaa;
-        padding: 30px;
-        text-align: center;
-        cursor: pointer;
-        background: #fafafa;
-    }
-
-    .wii-upload-container {
-        max-width: 800px;
-        width: 90vw;
-        margin: 30px auto;
-        padding: 20px;
-        border: 1px solid #ddd;
-        border-radius: 8px;
-    }
-
-    .wii-queue-grid-wrapper {
-        display: flex;
-        flex-direction: column;
-        align-items: center;
-        gap: 10px;
-        margin-bottom: 0;
-    }
-
-    .wii-queue-image {
-        max-width: 120px;
-        max-height: 120px;
-        border: 1px solid #ccc;
-        border-radius: 4px;
-    }
-
-    .wii-queue-button-select {
-        padding: 6px 12px;
-        background-color: #0073aa;
-        color: #fff;
-        border: none;
-        border-radius: 4px;
-        cursor: pointer;
-        margin: 1px;
-    }
-
-    .wii-queue-button-remove {
-        padding: 6px 12px;
-        background-color: #d63638;
-        color: #fff;
-        border: none;
-        border-radius: 4px;
-        cursor: pointer;
-        margin: 1px;
-    }
-
-    .wii-clear {
-        width: 100%;
-    }
-
-    .wii-current-container {
-        margin-top: 20px;
-        min-height: 50px;
-        border: 1px solid #ccc;
-        padding: 10px;
-        background-color: #e6e6e6;
-        display: grid;
-        grid-template-columns: 2fr 1fr;
-        gap: 10px;
-    }
-
-    .wii-current-image {
-        max-width: 300px;
-        max-height: 300px;
-    }
-
-    .wii-upload-button{
-        background-color: #28a745;
-        width: 100%;
-    }
-
-    .wii-upload-button:disabled {
-        background-color: #6c757d;
-        cursor: not-allowed;
-    }
-
-    .wii-upload-success {
-        display: none;
-        margin-top: 10px;
-        padding: 10px;
-        background-color: #d4edda;
-        color: #155724;
-        border: 1px solid #c3e6cb;
-        border-radius: 4px;
-    }
-
-    .wii-upload-error {
-        display: none;
-        margin-top: 10px;
-        padding: 10px;
-        background-color: #f8d7da;
-        color: #721c24;
-        border: 1px solid #f5c6cb;
-        border-radius: 4px;
-    }
 </style>

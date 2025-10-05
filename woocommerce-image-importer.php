@@ -3,7 +3,7 @@
 /*
 Plugin Name: Woocommerce Image Importer
 Description: Quickly import images, set tags for digital downloads
-Version: 1.0
+Version: 1.1
 Author: lucaf
 License: MIT
 */

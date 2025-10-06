@@ -15,7 +15,9 @@ if (!defined('ABSPATH')) {
 define('WII_PATH', plugin_dir_path(__FILE__));
 define('WII_URL', plugin_dir_url(__FILE__));
 
-require_once WII_PATH . 'vendor/autoload.php';
+if (file_exists(WII_PATH . 'vendor/autoload.php')) {
+    require_once WII_PATH . 'vendor/autoload.php';
+}
 require_once WII_PATH . 'includes/Settings.php';
 require_once WII_PATH . 'includes/Uploader.php';
 

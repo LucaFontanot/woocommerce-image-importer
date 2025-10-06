@@ -66,10 +66,12 @@ foreach ($product_tags as $tag) {
             <input type="text" id="wii-current-filename" class="wii-current-filename" placeholder="Product name">
         </div>
         <div class="wii-current-options-container">
-            <h4>Upload options</h4>
+            <h4>Image options</h4>
             <label for="wii-watermark-option">Add watermark:</label>
             <input type="checkbox" id="wii-watermark-option" class="wii-watermark-option">
-            <br><br>
+            <input type="file" id="wii-watermark-file" accept="image/*" class="wii-watermark-file">
+            <br><hr>
+            <h4>Product options</h4>
             <span>Price:</span>
             <strong><?php echo get_woocommerce_currency_symbol(); ?></strong>
             <input type="number" id="wii-price-input" class="wii-price-input" value="0.00" min="0" step="0.01">
@@ -133,6 +135,7 @@ foreach ($product_tags as $tag) {
         const successDiv = document.getElementById('wii-upload-success');
         const errorDiv = document.getElementById('wii-upload-error');
         const categorySelect = document.getElementById('wii-category-select');
+        const watermarkFileInput = document.getElementById('wii-watermark-file');
         let tagsSelect = null;
         let queue = [];
         let selectedImage = null;
@@ -283,6 +286,13 @@ foreach ($product_tags as $tag) {
             const label = labelInput.value.trim();
             const category = categorySelect.value;
             const tags = tagsSelect.val() || [];
+            const watermarkFile = watermarkFileInput.files[0] || null;
+
+            if (watermark && !watermarkFile) {
+                if (onError) onError('Please select a watermark file!');
+                if (onFinally) onFinally();
+                return;
+            }
 
             const formData = new FormData();
             formData.append('action', 'wii_upload_image');
@@ -292,6 +302,7 @@ foreach ($product_tags as $tag) {
             formData.append('price', price.toFixed(2));
             formData.append('tags', tags.join(","));
             formData.append('label', label);
+            formData.append('watermark_file', watermarkFile);
             formData.append('image', item.file);
 
             fetch('<?php echo admin_url('admin-ajax.php'); ?>', {

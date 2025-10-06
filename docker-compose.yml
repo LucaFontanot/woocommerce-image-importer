@@ -21,6 +21,6 @@ services:
       WORDPRESS_DEBUG: true
     volumes:
       - ./wp:/var/www/html
-      - ../woocommerce_image_importer:/var/www/html/wp-content/plugins/woocommerce_image_importer
+      - ./:/var/www/html/wp-content/plugins/woocommerce-image-importer
 volumes:
   db_data:

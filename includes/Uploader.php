@@ -2,11 +2,48 @@
 
 namespace WII;
 
+use GdImage;
+
 class Uploader
 {
     public static function init()
     {
         add_action('wp_ajax_wii_upload_image', [__CLASS__, 'ajaxRequest']);
+    }
+
+    protected static function fileToPhpGd($file, $download_path = null) : GdImage|false
+    {
+        $path = $download_path;
+        if ($download_path === null) {
+            $tmp_dir = sys_get_temp_dir();
+            $path = tempnam($tmp_dir, 'wii_upload_');
+            if (!move_uploaded_file($file['tmp_name'], $path)) {
+                return false;
+            }
+        }
+        return match ($file['type']) {
+            'image/jpeg' => imagecreatefromjpeg($path),
+            'image/png' => imagecreatefrompng($path),
+            'image/gif' => imagecreatefromgif($path),
+            'image/webp' => imagecreatefromwebp($path),
+            default => false,
+        };
+    }
+
+    protected static function resize($file, $newWidth, $newHeight)
+    {
+        $width = imagesx($file);
+        $height = imagesy($file);
+        $resized = imagecreatetruecolor($newWidth, $newHeight);
+        if (in_array($file['type'], ['image/png', 'image/gif']))
+        {
+            imagecolortransparent($resized, imagecolorallocatealpha($resized, 0, 0, 0, 127));
+            imagealphablending($resized, false);
+            imagesavealpha($resized, true);
+        }
+        imagecopyresampled($resized, $file, 0, 0, 0, 0, $newWidth, $newHeight, $width, $height);
+        imagedestroy($file);
+        return $resized;
     }
 
     protected static function handleUpload($file, $watermark, $category, $tags, $quality, $price, $label): bool
@@ -34,21 +71,7 @@ class Uploader
         if (!move_uploaded_file($tmp_name, $download_path)) {
             return false;
         }
-        $image = null;
-        switch ($file['type']) {
-            case 'image/jpeg':
-                $image = imagecreatefromjpeg($download_path);
-                break;
-            case 'image/png':
-                $image = imagecreatefrompng($download_path);
-                break;
-            case 'image/gif':
-                $image = imagecreatefromgif($download_path);
-                break;
-            case 'image/webp':
-                $image = imagecreatefromwebp($download_path);
-                break;
-        }
+        $image = self::fileToPhpGd($file, $download_path);
         if (!$image) {
             @unlink($download_path);
             return false;
@@ -66,30 +89,36 @@ class Uploader
             }
             $scaledHeight = $scaledHeight * ($quality / 100);
             $scaledWidth = $scaledWidth * ($quality / 100);
-            $resized = imagecreatetruecolor($scaledWidth, $scaledHeight);
-            if (in_array($file['type'], ['image/png', 'image/gif']))
-            {
-                imagecolortransparent($resized, imagecolorallocatealpha($resized, 0, 0, 0, 127));
-                imagealphablending($resized, false);
-                imagesavealpha($resized, true);
-            }
-            imagecopyresampled($resized, $image, 0, 0, 0, 0, $scaledWidth, $scaledHeight, $width, $height);
-            imagedestroy($image);
-            $image = $resized;
+            $image = self::resize($image, intval($scaledWidth), intval($scaledHeight));
         }
-        if ($watermark) {
-            $text = $original_name;
-            $font_size = intval(15 * ($quality / 100));
-            $angle = 0;
-            $font_file = WII_PATH . 'assets/ttf/arial.ttf'; // Ensure you have a .
-            $text_color = imagecolorallocatealpha($image, 255, 255, 255, 75); // White with alpha
-            $padding = 10;
-            $bbox = imagettfbbox($font_size, $angle, $font_file, $text);
-            $text_width = abs($bbox[4] - $bbox[0]);
-            $text_height = abs($bbox[5] - $bbox[1]);
-            $x = imagesx($image) - $text_width - $padding;
-            $y = imagesy($image) - $padding;
-            imagettftext($image, $font_size, $angle, $x, $y, $text_color, $font_file, $text);
+        if ($watermark != null) {
+            $watermarkFile = self::fileToPhpGd($watermark);
+            if ($watermarkFile) {
+                $wmWidth = imagesx($watermarkFile);
+                $wmHeight = imagesy($watermarkFile);
+                $imgWidth = imagesx($image);
+                $imgHeight = imagesy($image);
+                $imgProportion = $imgWidth / $imgHeight;
+                $wmProportion = $wmWidth / $wmHeight;
+                $resizedWatermark = null;
+                if ($imgProportion >= $wmProportion) {
+                    $newWmWidth = $imgWidth;
+                    $newWmHeight = $wmHeight * ($imgWidth / $wmWidth);
+                    $resizedWatermark = self::resize($watermarkFile, intval($newWmWidth), intval($newWmHeight));
+                } else {
+                    $newWmHeight = $imgHeight;
+                    $newWmWidth = $wmWidth * ($imgHeight / $wmHeight);
+                    $resizedWatermark = self::resize($watermarkFile, intval($newWmWidth), intval($newWmHeight));
+                }
+                //put watermark at center
+                $wmWidth = imagesx($resizedWatermark);
+                $wmHeight = imagesy($resizedWatermark);
+                $x = ($imgWidth - $wmWidth) / 2;
+                $y = ($imgHeight - $wmHeight) / 2;
+                imagealphablending($image, true);
+                imagecopy($image, $resizedWatermark, intval($x), intval($y), 0, 0, $wmWidth, $wmHeight);
+                imagedestroy($resizedWatermark);
+            }
         }
         $saved = false;
         switch ($file['type']) {
@@ -171,7 +200,23 @@ class Uploader
             return;
         }
         $file = $_FILES['image'];
-        $watermark = intval($_POST["watermark"] ?? 0) == 1;
+        $hasWatermark = intval($_POST["watermark"] ?? 0) == 1;
+        $watermark = null;
+        if ($hasWatermark) {
+            if (empty($_FILES['watermark_file'])) {
+                wp_send_json_error(['message' => 'Watermark is empty uploaded.']);
+                return;
+            }
+            if ($_FILES['watermark_file']['error'] != UPLOAD_ERR_OK) {
+                if ($_FILES['watermark_file']['error'] == UPLOAD_ERR_INI_SIZE || $_FILES['watermark_file']['error'] == UPLOAD_ERR_FORM_SIZE) {
+                    wp_send_json_error(['message' => 'Watermark size exceeds the allowed limit. Edit your php.ini or .htaccess file.']);
+                } else {
+                    wp_send_json_error(['message' => 'Error during watemark upload.']);
+                }
+                return;
+            }
+            $watermark = $_FILES['watermark_file'];
+        }
         $category = intval($_POST["category"] ?? 0);
         $price = floatval($_POST["price"] ?? 0);
         $label = trim(sanitize_text_field($_POST["label"] ?? ""));

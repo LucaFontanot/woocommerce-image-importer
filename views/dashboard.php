@@ -74,18 +74,18 @@ foreach ($product_tags as $tag) {
             <h4>Product options</h4>
             <span>Price:</span>
             <strong><?php echo get_woocommerce_currency_symbol(); ?></strong>
-            <input type="number" id="wii-price-input" class="wii-price-input" value="0.00" min="0" step="0.01">
+            <input type="number" id="wii-price-input" class="wii-price-input" value="30.00" min="0" step="0.01">
             <br><br>
             <label for="wii-quality-select">Quality:</label>
             <select id="wii-quality-select" class="wii-quality-select">
                 <option value="100">100%</option>
                 <option value="90">90%</option>
                 <option value="80">80%</option>
-                <option value="70">70%</option>
+                <option value="70" selected>70%</option>
                 <option value="60">60%</option>
                 <option value="50">50%</option>
                 <option value="40">40%</option>
-                <option value="30" selected>30%</option>
+                <option value="30">30%</option>
                 <option value="20">20%</option>
                 <option value="10">10%</option>
             </select>
@@ -107,6 +107,8 @@ foreach ($product_tags as $tag) {
                 </select>
             </div>
             <br>
+        </div>
+        <div class="wii-current-options-container">
             <button id="wii-upload-button" class="wii-queue-button-select wii-upload-button" disabled>
                 Upload and create
             </button>

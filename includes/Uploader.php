@@ -35,12 +35,9 @@ class Uploader
         $width = imagesx($file);
         $height = imagesy($file);
         $resized = imagecreatetruecolor($newWidth, $newHeight);
-        if (in_array($file['type'], ['image/png', 'image/gif']))
-        {
-            imagecolortransparent($resized, imagecolorallocatealpha($resized, 0, 0, 0, 127));
-            imagealphablending($resized, false);
-            imagesavealpha($resized, true);
-        }
+        imagecolortransparent($resized, imagecolorallocatealpha($resized, 0, 0, 0, 127));
+        imagealphablending($resized, false);
+        imagesavealpha($resized, true);
         imagecopyresampled($resized, $file, 0, 0, 0, 0, $newWidth, $newHeight, $width, $height);
         imagedestroy($file);
         return $resized;
